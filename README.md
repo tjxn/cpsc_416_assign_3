@@ -42,7 +42,7 @@ The key value service associates string keys with string values. Think of it as 
 remote hash table, providing the same strong consistency semantics that you would 
 expect of a local hash table. The service starts with an empty hash table: every 
 key is mapped to the empty string "". The service supports the following three 
-`atomic` operations via RPC:
+*atomic* operations via RPC:
 
  - ``curr-value`` ← get(``key``)
 	- Retrieves the current value for a key. ``curr-value`` contains the current 
@@ -58,8 +58,8 @@ key is mapped to the empty string "". The service supports the following three
 	the value currently associated with ``key``. ``curr-value`` is set to "unavailable" if 
 	the key is unavailable.
 	
-One of the arguments to the key-value service implementation is a ``key failure 
-probability``. This controls the likelihood of a key becoming unavailable during 
+One of the arguments to the key-value service implementation is a *key failure 
+probability*. This controls the likelihood of a key becoming unavailable during 
 any one of the above three operations. Initially all keys are available. Once a 
 key becomes unavailable, it is a permanent unavailability (i.e., until the service
 is restarted). A key's availability is independent from the availability of other
@@ -83,6 +83,7 @@ operation is always set to "unavailable".
 	leader will eventually advertise an accurate list of all active nodes in the system.
 	And, each active node (including the leader) will retrieve the latest 
 	version of this list from the key-value service.
+		
 		- Each node must continually print a listing of the set of active nodes and
 		the leader node id to stdout, one listing per line, in the following format:
 		
