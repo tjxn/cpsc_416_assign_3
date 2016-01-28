@@ -12,16 +12,16 @@
 package main
 
 import (
-	"container/list"
 	"fmt"
 	"net/rpc"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // Constants
-var DELAY int = 5
+var DELAY time.Duration = 5
 
 // Global Variables
 var kvService *rpc.Client
@@ -30,7 +30,8 @@ var leaderNum int
 var registerNum int
 var myIDNum int
 var myID string
-var activeNodes *List
+var activeNodes []string
+var nodeList []string
 
 // args in get(args)
 type GetArgs struct {
@@ -68,39 +69,47 @@ func checkArgs() {
 }
 
 func checkForLeader() {
-
+	fmt.Println("Checking for leader")
 	var stringLeaderNum string = strconv.Itoa(leaderNum)
 
 	var result string = get("Leader-" + stringLeaderNum)
+	fmt.Println(result)
+	switch {
 
-	switch result {
-
-	case "unavailable":
+	case result == "unavailable":
+		fmt.Println("Leader unavailable")
 		leaderNum++
 		checkForLeader()
 
-	case "":
+	case result == "":
+		fmt.Println("Attempting to become leader")
 		attemptToBecomeLeader()
 
 	default:
+		fmt.Println("Registering with leader")
 		registerWithLeader()
 	}
 }
 
 func attemptToBecomeLeader() {
 	var result string = testset(getLeaderString(), "", myID)
+	fmt.Println(result)
 
-	switch result {
-	case "unavailable":
+	switch {
+	case result == "unavailable":
 		checkForLeader()
 
-	case myID:
+	case result == myID:
 		// success
 		addIDtoActiveNodes(myID)
-
-		go updateListofActiveNodes()
-		go checkForNewNode()
-		go checkActiveNodesAreActive()
+		fmt.Println("I AM THE LEADER")
+		new_leader, err := strconv.Atoi(myID)
+		checkError(err)
+		leaderNum = new_leader
+		//go updateListofActiveNodes()
+		checkForNewNode()
+		//go checkForNewNode()
+		//go checkActiveNodesAreActive()
 
 	default:
 		// failure
@@ -111,16 +120,16 @@ func attemptToBecomeLeader() {
 func registerWithLeader() {
 	var result string = testset(getRegisterString(), "", myID)
 
-	switch result {
+	switch {
 
-	case "unavailable":
+	case result == "unavailable":
 		incrementRegisterString()
 		testset(getRegisterString(), "", myID)
 
-	case myID:
+	case result == myID:
 		// success
 		go getActiveNodes()
-		go iAmAlive()
+		go iAmActive()
 
 	default:
 		// failure
@@ -131,11 +140,11 @@ func registerWithLeader() {
 func getActiveNodes() {
 	var result string = get(getLeaderString())
 
-	switch result {
-	case "unavailable":
+	switch {
+	case result == "unavailable":
 		checkForLeader()
 
-	case "":
+	case result == "":
 		getActiveNodes()
 
 	default:
@@ -146,23 +155,25 @@ func getActiveNodes() {
 
 func iAmActive() {
 	var result string = get(getMyIDString())
+	result_int, err := strconv.Atoi(result)
+	checkError(err)
 
-	switch result {
-	case "unavailable":
+	switch {
+	case result == "unavailable":
 		incrementMyIDString()
 		iAmActive()
 
-	case "":
-		put(getMyIDString(), lastNum)
+	case result == "":
+		put(getMyIDString(), string(lastNum))
 		delaySecond(DELAY)
 		iAmActive()
 
-	case result > lastNum:
-		incrementLastNum()
-		put(getMyIDString(), getLastNum())
+	case result_int > lastNum:
+		incrementLastNumString()
+		put(getMyIDString(), getLastNumString())
 		iAmActive()
 
-	case result == lastNum:
+	case result_int == lastNum:
 		isLeaderDead()
 
 	default:
@@ -176,25 +187,27 @@ func isLeaderDead() {
 	delaySecond(DELAY)
 
 	var result string = get(getMyIDString())
+	result_int, err := strconv.Atoi(result)
+	checkError(err)
 
-	switch result {
+	switch {
 
-	case "unavailable":
+	case result == "unavailable":
 		incrementMyIDString()
 		isLeaderDead()
 
-	case "":
+	case result == "":
 		put(getMyIDString(), getLastNumString())
 		delaySecond(DELAY)
 		iAmActive()
 
-	case result > lastNum:
+	case result_int > lastNum:
 		incrementLastNumString()
 		put(getMyIDString(), getLastNumString())
 		delaySecond(DELAY)
 		iAmActive()
 
-	case result == lastNum:
+	case result_int == lastNum:
 		checkForLeader()
 
 	}
@@ -204,19 +217,31 @@ func delaySecond(n time.Duration) {
 	time.Sleep(n * time.Second)
 }
 
-func displayActiveNodes(string nodes) {
+func displayActiveNodes(nodes string) {
 	fmt.Println(nodes)
 }
 
-func addIDtoActiveNodes(string id) {
-	activeNodes.PushBack(id)
+func addIDtoActiveNodes(id string) {
+	fmt.Println("Adding new node")
+	activeNodes = append(activeNodes, id)
 }
 
-func removeIDfromActiveNodes(string id) {
-	activeNodes.Remove(id)
+func removeIDfromActiveNodes(id string) {
+	size := len(activeNodes)
+
+	for index, element := range activeNodes {
+
+		if element == id {
+
+			// Remove id by replacing it with the last element
+			// in the slice
+			activeNodes[index] = activeNodes[size-1]
+			activeNodes[size-1] = ""
+		}
+	}
 }
 
-func incrementLastNumString() {
+func incrementLastNumString() string {
 	lastNum++
 	result := strconv.Itoa(lastNum)
 	return result
@@ -227,7 +252,7 @@ func getLastNumString() string {
 	return result
 }
 
-func incrementMyIDString() {
+func incrementMyIDString() string {
 	myIDNum++
 	result := strconv.Itoa(myIDNum)
 	return myID + "-" + result
@@ -238,7 +263,7 @@ func getMyIDString() string {
 	return myID + "-" + result
 }
 
-func incrementRegisterString() {
+func incrementRegisterString() string {
 	registerNum++
 	result := strconv.Itoa(registerNum)
 	return "Register-" + result
@@ -249,7 +274,7 @@ func getRegisterString() string {
 	return "Register-" + result
 }
 
-func incrementLeaderString() {
+func incrementLeaderString() string {
 	leaderNum++
 	result := strconv.Itoa(leaderNum)
 	return "Leader-" + result
@@ -260,19 +285,19 @@ func getLeaderString() string {
 	return "Leader-" + result
 }
 
-func get(string key) string {
+func get(key string) string {
 
 	var kvVal ValReply
 
 	getArgs := GetArgs{key}
 
-	err = kvService.Call("KeyValService.Get", getArgs, &kvVal)
+	err := kvService.Call("KeyValService.Get", getArgs, &kvVal)
 	checkError(err)
 
 	return kvVal.Val
 }
 
-func put(string key, string value) string {
+func put(key string, value string) string {
 	var kvVal ValReply
 
 	putArgs := PutArgs{
@@ -280,13 +305,13 @@ func put(string key, string value) string {
 		Val: value,
 	}
 
-	err = kvService.Call("KeyValService.Put", putArgs, &kvVal)
+	err := kvService.Call("KeyValService.Put", putArgs, &kvVal)
 	checkError(err)
 
 	return kvVal.Val
 }
 
-func testset(string key, string value, string replacement) string {
+func testset(key string, value string, replacement string) string {
 	var kvVal ValReply
 
 	tsArgs := TestSetArgs{
@@ -295,7 +320,7 @@ func testset(string key, string value, string replacement) string {
 		NewVal:  replacement,
 	}
 
-	err = kvService.Call("KeyValService.TestSet", tsArgs, &kvVal)
+	err := kvService.Call("KeyValService.TestSet", tsArgs, &kvVal)
 	checkError(err)
 
 	return kvVal.Val
@@ -310,7 +335,8 @@ func main() {
 	myID = os.Args[2]
 
 	// Connect to the KV-service via RPC.
-	kvService, err := rpc.Dial("tcp", kvAddr)
+	var err error
+	kvService, err = rpc.Dial("tcp", kvAddr)
 	checkError(err)
 
 	lastNum = 1
@@ -318,7 +344,7 @@ func main() {
 	registerNum = 1
 	myIDNum = 1
 
-	activeNodes = list.New()
+	activeNodes = []string{}
 
 	checkForLeader()
 
@@ -330,4 +356,42 @@ func checkError(err error) {
 		fmt.Fprintf(os.Stderr, "Error ", err.Error())
 		os.Exit(1)
 	}
+}
+
+// TODO
+func updateListofActiveNodes() {
+	fmt.Println("Advertising active nodes")
+	active_nodes := strings.Join(activeNodes, " ")
+	//fmt.Println(active_nodes)
+	result := strconv.Itoa(leaderNum)
+	put("Leader-"+result, active_nodes)
+	var check_active string = testset(getLeaderString(), "", myID)
+	fmt.Println(check_active)
+}
+
+//Unsure of how to check for every possible node that joins, may have arbitrary
+//IDs, for now we will limit the IDs to be 0 to 10
+func checkForNewNode() {
+	fmt.Println("Finding nodes")
+	for i := 0; i < 10; i++ {
+		new_node := get(string(i))
+		if !contains(activeNodes, new_node) {
+			activeNodes = append(activeNodes, new_node)
+		}
+	}
+	updateListofActiveNodes()
+}
+
+func checkActiveNodesAreActive() {
+}
+
+// Contains function used to check slice found from this thread:
+// http://stackoverflow.com/questions/10485743/contains-method-for-a-slice
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }
