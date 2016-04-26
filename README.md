@@ -6,11 +6,10 @@
 	University of British Columbia
 </h2>
 
-This assignment outline comes from the [UBC CPSC 416 course webpage](https://www.cs.ubc.ca/~bestchai/teaching/cs416_2015w2/assign3/index.html).
-
 <h3>
 	<b>High-Level Overview</b>
 </h3>
+This assignment outline comes from the [UBC CPSC 416 course webpage](https://www.cs.ubc.ca/~bestchai/teaching/cs416_2015w2/assign3/index.html).
 
 You will be provided with an implementation of a simple key-value service that 
 implements an RPC-accessible hash table in which keys are associated with values. 
