@@ -6,9 +6,9 @@
 	University of British Columbia
 </h2>
 
-<p align="center">
+<center>
 This assignment outline comes from the [UBC CPSC 416 course webpage](https://www.cs.ubc.ca/~bestchai/teaching/cs416_2015w2/assign3/index.html).
-</p>
+</center>
 
 <h3>
 	<b>High-Level Overview</b>
