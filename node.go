@@ -36,6 +36,11 @@ var activeNodes []string
 var nodeList []string
 var currentNodeKey map[string]int
 var currentNodeNum map[string]int
+var currentLeader string
+var activeNodeKey int
+var verbosePrintOnOff bool
+var die bool
+var killLeader bool
 
 // args in get(args)
 type GetArgs struct {
@@ -73,32 +78,33 @@ func checkArgs() {
 }
 
 func checkForLeader() {
-	fmt.Println("inside checkForLeader")
 	var stringLeaderNum string = strconv.Itoa(leaderNum)
 
 	var result string = get("Leader-" + stringLeaderNum)
-	fmt.Println("Leader id is: " + result)
 	switch {
 
 	case result == "unavailable":
-		fmt.Println("Leader unavailable")
 		leaderNum++
 		checkForLeader()
 
 	case result == "":
-		fmt.Println("call Attempting to become leader from checkForLeader")
-		attemptToBecomeLeader()
+		attemptToBecomeLeader("")
 
 	default:
-		fmt.Println("calling registerWithLeader from checkForLeader")
+		currentLeader = result
+
+		currentNodeKey = make(map[string]int)
+		currentNodeNum = make(map[string]int)
+		activeNodes = []string{}
+
+		die = false
+
 		registerWithLeader()
 	}
 }
 
-func attemptToBecomeLeader() {
-	fmt.Println("in attemptToBecomeLeader")
-	var result string = testset(getLeaderString(), "", myID)
-	fmt.Println("The Leader is: " + result)
+func attemptToBecomeLeader(oldLeaderID string) {
+	var result string = testset(getLeaderString(), oldLeaderID, myID)
 
 	switch {
 	case result == "unavailable":
@@ -106,15 +112,15 @@ func attemptToBecomeLeader() {
 
 	case result == myID:
 		// success
-		addIDtoActiveNodes(myID)
-		fmt.Println("I AM THE LEADER")
 
-		//go updateListofActiveNodes()
-		//fmt.Println("updateListofActiveNodes")
-		go checkForNewNode()
-		fmt.Println("started goroutine checkForNewNode")
-		fmt.Println("call checkActiveNodesAreActive")
-		checkActiveNodesAreActive()
+		if checkIfNewOrOld(myID) {
+			addIDtoActiveNodes(result)
+		}
+
+		killLeader = false
+		go updateListofActiveNodes()
+
+		checkForNewNode()
 
 	default:
 		// failure
@@ -123,23 +129,18 @@ func attemptToBecomeLeader() {
 }
 
 func registerWithLeader() {
-	fmt.Println("inside registerWithLeader")
 	var result string = testset(getRegisterString(), "", myID)
-	fmt.Println("Registering with Leader")
-	fmt.Println("testset Result")
-	fmt.Printf("%s\n", result)
 	switch {
 
 	case result == "unavailable":
 		incrementRegisterString()
-		testset(getRegisterString(), "", myID)
+		registerWithLeader()
 
 	case result == myID:
 		// success
-		//go getActiveNodes()
 		result = get(getRegisterString())
-		fmt.Println("Register String Result")
-		fmt.Println(result)
+
+		go getActiveNodes()
 		iAmActive()
 
 	default:
@@ -149,17 +150,24 @@ func registerWithLeader() {
 }
 
 func getActiveNodes() {
-	var result string = get(getLeaderString())
+	for {
 
-	switch {
-	case result == "unavailable":
-		checkForLeader()
+		if die {
+			return
+		}
 
-	case result == "":
-		getActiveNodes()
+		var result string = get(getActiveNodeKey())
 
-	default:
-		displayActiveNodes(result)
+		switch {
+		case result == "unavailable":
+			incrementActiveNodeKey()
+		case result == "":
+			delaySecond(DELAY)
+
+		default:
+			displayActiveNodes(result)
+			delaySecond(DELAY)
+		}
 	}
 
 }
@@ -167,12 +175,7 @@ func getActiveNodes() {
 func iAmActive() {
 	var result string = get(getMyIDString())
 	result_int, _ := strconv.Atoi(result)
-	fmt.Println()
-	fmt.Println("in iAmActive")
-	fmt.Printf("My Last Number: %d\n", lastNum)
-	fmt.Printf("Recieved String: %s\n", result)
-	fmt.Printf("Received Number: %d\n", result_int)
-	fmt.Println()
+
 	switch {
 	case result == "unavailable":
 		incrementMyIDString()
@@ -180,7 +183,6 @@ func iAmActive() {
 
 	case result == "":
 		put(getMyIDString(), getLastNumString())
-		delaySecond(DELAY_SHORT)
 		iAmActive()
 
 	case result_int > lastNum:
@@ -189,11 +191,30 @@ func iAmActive() {
 		incrementLastNumString()
 
 		put(getMyIDString(), getLastNumString())
-		delaySecond(DELAY_SHORT)
 		iAmActive()
 
 	case result_int == lastNum:
-		isLeaderDead()
+
+		var succ int
+		for i := 0; i < 10; i++ {
+			succ = hasChanged()
+
+			if succ == 1 {
+				break
+
+			} else if succ == 0 {
+				delaySecond(DELAY)
+
+			} else if succ == 2 {
+				checkForLeader()
+			}
+		}
+
+		if succ == 0 {
+			isLeaderDead()
+		} else if succ == 1 {
+			iAmActive()
+		}
 
 	default:
 		fmt.Println("Error occured in iAmActive function switch statement")
@@ -202,18 +223,47 @@ func iAmActive() {
 	}
 }
 
+func hasChanged() int {
+
+	var result string = get(getMyIDString())
+	result_int, _ := strconv.Atoi(result)
+
+	switch {
+	case result == "unavailable":
+		incrementMyIDString()
+		return 0
+
+	case result == "":
+		put(getMyIDString(), getLastNumString())
+		return 1
+
+	case result_int > lastNum:
+
+		lastNum = result_int
+		incrementLastNumString()
+
+		put(getMyIDString(), getLastNumString())
+		return 1
+
+	case result_int == lastNum:
+
+		return 0
+	case result_int < lastNum:
+		return 2
+
+	default:
+		fmt.Println("Something went wrong in hasChanged")
+		os.Exit(1)
+	}
+	return 0
+}
+
 func isLeaderDead() {
-	fmt.Println("Is Leader Dead?")
 	delaySecond(DELAY)
 
 	var result string = get(getMyIDString())
 
-	result_int, err := strconv.Atoi(result)
-	checkError(err)
-
-	fmt.Printf("My Last Number: %d\n", lastNum)
-	fmt.Printf("Recieved String: %s\n", result)
-	fmt.Printf("Received Number: %d\n", result_int)
+	result_int, _ := strconv.Atoi(result)
 
 	switch {
 
@@ -223,19 +273,18 @@ func isLeaderDead() {
 
 	case result == "":
 		put(getMyIDString(), getLastNumString())
-		delaySecond(DELAY)
 		iAmActive()
 
 	case result_int > lastNum:
 		incrementLastNumString()
 		put(getMyIDString(), getLastNumString())
-		delaySecond(DELAY)
 		iAmActive()
 
 	case result_int == lastNum:
-		put(getLeaderString(), myID)
-		checkForLeader()
-
+		die = true
+		delaySecond(DELAY)
+		delaySecond(DELAY)
+		attemptToBecomeLeader(currentLeader)
 	}
 }
 
@@ -252,9 +301,7 @@ func displayActiveNodes(nodes string) {
 }
 
 func addIDtoActiveNodes(id string) {
-	fmt.Println("Adding new node")
 	activeNodes = append(activeNodes, id)
-	fmt.Println(activeNodes)
 }
 
 func removeIDfromActiveNodes(id string) {
@@ -267,7 +314,7 @@ func removeIDfromActiveNodes(id string) {
 			// Remove id by replacing it with the last element
 			// in the slice
 			activeNodes[index] = activeNodes[size-1]
-			activeNodes[size-1] = ""
+			activeNodes = append(activeNodes[:size-1], activeNodes[size:]...)
 		}
 	}
 }
@@ -303,6 +350,16 @@ func incrementRegisterString() string {
 func getRegisterString() string {
 	result := strconv.Itoa(registerNum)
 	return "Register-" + result
+}
+
+func getActiveNodeKey() string {
+	result := strconv.Itoa(activeNodeKey)
+	return "Active-Nodes-" + result
+
+}
+
+func incrementActiveNodeKey() {
+	activeNodeKey++
 }
 
 func incrementLeaderString() string {
@@ -365,6 +422,8 @@ func main() {
 	kvAddr := os.Args[1]
 	myID = os.Args[2]
 
+	verbosePrintOnOff = true
+
 	// Connect to the KV-service via RPC.
 	var err error
 	kvService, err = rpc.Dial("tcp", kvAddr)
@@ -374,6 +433,7 @@ func main() {
 	leaderNum = 1
 	registerNum = 1
 	myIDNum = 1
+	activeNodeKey = 1
 
 	currentNodeKey = make(map[string]int)
 	currentNodeNum = make(map[string]int)
@@ -381,6 +441,12 @@ func main() {
 
 	checkForLeader()
 
+}
+
+func verbosePrint(message string) {
+	if verbosePrintOnOff {
+		fmt.Println(message)
+	}
 }
 
 // If error is non-nil, print it out and halt.
@@ -393,29 +459,53 @@ func checkError(err error) {
 
 // TODO
 func updateListofActiveNodes() {
-	fmt.Println("Advertising active nodes")
+	for {
 
-	active_nodes := strings.Join(activeNodes, " ")
+		if killLeader {
+			return
+		}
 
-	fmt.Println(active_nodes)
+		// Check that we are still leader
+		var result string = get(getLeaderString())
 
-	put(getLeaderString(), active_nodes)
+		if result == "unavailable" {
+			return
+		}
+		active_nodes := strings.Join(activeNodes, " ")
+		fmt.Println(active_nodes)
+
+		result = put(getActiveNodeKey(), active_nodes)
+
+		switch {
+		case result == "unavailable":
+			incrementActiveNodeKey()
+
+		case result == "":
+			// success
+			delaySecond(DELAY)
+
+		default:
+			fmt.Println("Error in updateListofActiveNodes")
+			os.Exit(1)
+		}
+	}
 }
 
-//Unsure of how to check for every possible node that joins, may have arbitrary
-//IDs, for now we will limit the IDs to be 0 to 10
 func checkForNewNode() {
 	for {
-		smallDelay()
-		//	for i := 0; i < 10; i++ {
-		//		new_node := get(string(i))
-		//		if !contains(activeNodes, new_node) {
-		//			activeNodes = append(activeNodes, new_node)
-		//		}
-		//	}
-		//	updateListofActiveNodes()
+		delaySecond(DELAY)
+		// Check that we are still Leader
+		var result string = get(getLeaderString())
 
-		var result string = get(getRegisterString())
+		if result == "unavailable" || result != myID {
+			killLeader = true
+			delaySecond(DELAY)
+			delaySecond(DELAY)
+			checkForLeader()
+		}
+
+		// Check for new Nodes
+		result = get(getRegisterString())
 		switch {
 
 		case result == "unavailable":
@@ -424,62 +514,94 @@ func checkForNewNode() {
 		case result == "":
 
 		default:
-			fmt.Println("Got a new Node")
-			addIDtoActiveNodes(result)
-			incrementNodeIDString(result)
 
-			put(getRegisterString(), "")
+			if checkIfNewOrOld(result) {
+				addIDtoActiveNodes(result)
+				incrementNodeIDString(result)
+
+				put(getRegisterString(), "")
+
+				go checkNodeisActive(result)
+			}
 		}
 	}
 }
 
-func checkActiveNodesAreActive() {
-	fmt.Println("in activeNodesAreActive")
-	for {
-		delaySecond(DELAY_SHORT)
-		for _, element := range activeNodes {
+func checkIfNewOrOld(id string) bool {
 
-			if element != myID && element != "" {
-				var result string = get(getNodeIDString(element))
-				result_num, _ := strconv.Atoi(result)
+	for _, element := range activeNodes {
 
-				fmt.Println("Last Number:")
-				fmt.Printf("%d\n", currentNodeNum[element])
-				fmt.Println("Received Number:")
-				fmt.Printf("%d\n", result_num)
-
-				switch {
-				case result == "unavailable":
-					incrementNodeIDString(element)
-
-				case result == "":
-					checkIfNodeDead(element)
-
-				case result_num > currentNodeNum[element]:
-					result_num++
-					currentNodeNum[element] = result_num
-
-					put(getNodeIDString(element), strconv.Itoa(currentNodeNum[element]))
-
-				case result_num == currentNodeNum[element]:
-					fmt.Println("inside of checkActiveNodesAreActive")
-					fmt.Println("calling checkIfNodeDead")
-					checkIfNodeDead(element)
-				}
-			}
+		if element == id {
+			return false
 		}
 	}
+	return true
+
+}
+
+func checkNodeisActive(id string) {
+	for {
+		var succ int
+		for i := 0; i < 10; i++ {
+			succ = hasNodeChanged(id)
+
+			if succ == 1 {
+				break
+			} else if succ == 0 {
+				delaySecond(DELAY_SHORT)
+
+			} else if succ == 2 {
+				return
+			}
+		}
+
+		if succ == 0 {
+			checkIfNodeDead(id)
+			return
+		}
+
+	}
+}
+
+func hasNodeChanged(id string) int {
+	var result string = get(getNodeIDString(id))
+	result_num, _ := strconv.Atoi(result)
+
+	switch {
+	case result == "unavailable":
+		incrementNodeIDString(id)
+		return 1
+
+	case result == "":
+		return 0
+
+	case result_num > currentNodeNum[id]:
+		result_num++
+		currentNodeNum[id] = result_num
+
+		put(getNodeIDString(id), strconv.Itoa(currentNodeNum[id]))
+
+		return 1
+	case result_num == currentNodeNum[id]:
+
+		return 0
+	case result_num < currentNodeNum[id]:
+		return 2
+
+	default:
+		fmt.Println("hasNodeChanged result: " + result)
+		fmt.Println("Something went wrong in hasNodeChanged")
+		os.Exit(1)
+	}
+	return 0
 
 }
 
 func checkIfNodeDead(id string) {
-	fmt.Printf("Checking if Node is Dead: %s\n", id)
 	delaySecond(DELAY_SHORT)
 
 	var result string = get(getNodeIDString(id))
 	result_num, _ := strconv.Atoi(result)
-	fmt.Printf("Last Number: %d\n", currentNodeNum[id])
-	fmt.Printf("Received Number: %s\n", result)
 
 	switch {
 	case result == "unavailable":
@@ -489,11 +611,6 @@ func checkIfNodeDead(id string) {
 		removeIDfromActiveNodes(id)
 
 	case result_num > currentNodeNum[id]:
-
-		fmt.Println("Last Number:")
-		fmt.Printf("%d\n", currentNodeNum[id])
-		fmt.Println("Received Number:")
-		fmt.Printf("%d\n", result_num)
 		result_num++
 		currentNodeNum[id] = result_num
 
@@ -501,6 +618,9 @@ func checkIfNodeDead(id string) {
 
 	case result_num == currentNodeNum[id]:
 		removeIDfromActiveNodes(id)
+		put(getNodeIDString(id), "")
+		currentNodeKey[id] = 0
+		currentNodeNum[id] = 0
 	}
 }
 
@@ -512,15 +632,4 @@ func incrementNodeIDString(id string) {
 	var num int = currentNodeKey[id]
 	num++
 	currentNodeKey[id] = num
-}
-
-// Contains function used to check slice found from this thread:
-// http://stackoverflow.com/questions/10485743/contains-method-for-a-slice
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
 }

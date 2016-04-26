@@ -66,6 +66,8 @@ is restarted). A key's availability is independent from the availability of othe
 keys in the key-value service. When a key is unavailable, the return value for an 
 operation is always set to "unavailable".	
 
+Download the [key-value service](https://github.com/tjxn/cpsc_416_assign_3/blob/master/kvservicemain.go) implementation and an example [client](https://github.com/tjxn/cpsc_416_assign_3/blob/master/kvclientmain.go) that exercises the service.
+
 <h3>
 	<b>Implementation Requirements</b>
 </h3>
